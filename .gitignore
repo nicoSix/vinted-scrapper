@@ -1,0 +1,9 @@
+# Secrets
+.env
+
+# JetBrains IDE
+.idea
+
+# Libraries
+.venv
+__pycache__
