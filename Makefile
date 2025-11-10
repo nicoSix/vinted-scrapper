@@ -11,3 +11,7 @@ scrap: ## 🔍 Launch the Vinted scraper script
 .PHONY: get-cookie
 get-cookie: ## 🍪 Display the AUTH_COOKIE value from .env file
 	@grep '^AUTH_COOKIE=' .env | cut -d '=' -f 2- | tr -d '"'
+
+.PHONY: purge-results
+purge-results: ## 🗑️  Remove all CSV files from the results folder
+	rm -f results/*.csv

@@ -1,4 +1,6 @@
+import csv
 import json
+import os
 import random
 import time
 from enum import StrEnum
@@ -161,6 +163,28 @@ def _is_item_too_old(item: VintedItem, publication_time: PublicationTime) -> boo
     return threshold is not None and (now - item_date) > threshold
 
 
+def _setup_csv(csv_path: str) -> None:
+    """Create a CSV file with headers matching the MatchingItem model."""
+    with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(['title', 'amount', 'currency_code', 'publication_time', 'profile_url', 'item_url', 'highest_discount'])
+
+
+def _insert_csv_line(csv_path: str, matching_item: MatchingItem) -> None:
+    """Append a matching item to the CSV file."""
+    with open(csv_path, 'a', newline='', encoding='utf-8') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow([
+            matching_item.title,
+            matching_item.amount,
+            matching_item.currency_code,
+            matching_item.publication_time.strftime('%Y-%m-%d %H:%M:%S'),
+            matching_item.profile_url,
+            matching_item.item_url,
+            matching_item.highest_discount
+        ])
+
+
 def _process_item(item: VintedItem, min_favorites: int, min_discount: int, headers: dict[str, Any], publication_time: PublicationTime) -> MatchingItem | None:
     """Process a single item: check favorites, fetch profile, and check discounts."""
     highest_discount = 0.0
@@ -223,6 +247,13 @@ def main() -> None:
     brand_ids = answers['brands']
     publication_time = answers['publication_time']
 
+    # Create CSV file with readable datetime
+    results_dir = 'results'
+    os.makedirs(results_dir, exist_ok=True)
+    timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+    csv_path = os.path.join(results_dir, f'results-{timestamp}.csv')
+    _setup_csv(csv_path)
+
     items = _fetch_items(search_value=search_value, min_price=min_price, max_price=max_price, mode=mode, headers=headers, brand_ids=brand_ids)
 
     if items is None:
@@ -236,14 +267,16 @@ def main() -> None:
 
         if maybe_matching_item is not None:
             matching_items.append(maybe_matching_item)
+            _insert_csv_line(csv_path, maybe_matching_item)
 
     print('Job done. Matching items:\n')
     if len(matching_items) == 0:
         print('No matching items found.')
-        return
     else:
         for matching_item in matching_items:
             matching_item.print_item()
+
+    print(f'\nResults saved to: {csv_path}')
 
 if __name__ == '__main__':
     main()

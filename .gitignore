@@ -7,3 +7,6 @@
 # Libraries
 .venv
 __pycache__
+
+# Results
+results/*.csv
