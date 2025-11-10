@@ -92,7 +92,7 @@ class Verification(BaseModel):
     google: GoogleVerification
 
 
-class User(BaseModel):
+class VintedProfile(BaseModel):
     id: int
     anon_id: str
     login: str
@@ -168,5 +168,5 @@ class User(BaseModel):
 
 
 class VintedProfileResponse(BaseModel):
-    user: User
+    user: VintedProfile
     code: int

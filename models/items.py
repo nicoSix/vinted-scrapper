@@ -80,7 +80,7 @@ class SearchTrackingParams(BaseModel):
     matched_queries: List[str]
 
 
-class Item(BaseModel):
+class VintedItem(BaseModel):
     id: int
     title: str
     price: Price
@@ -119,7 +119,7 @@ class Pagination(BaseModel):
 
 
 class VintedItemsSearchResponse(BaseModel):
-    items: List[Item]
+    items: List[VintedItem]
     search_tracking_params: GlobalSearchTrackingParams
     pagination: Pagination
     code: int
