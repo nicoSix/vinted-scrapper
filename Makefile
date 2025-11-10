@@ -7,3 +7,7 @@ help:
 .PHONY: scrap
 scrap: ## 🔍 Launch the Vinted scraper script
 	python3 scrap.py
+
+.PHONY: get-cookie
+get-cookie: ## 🍪 Display the AUTH_COOKIE value from .env file
+	@grep '^AUTH_COOKIE=' .env | cut -d '=' -f 2- | tr -d '"'

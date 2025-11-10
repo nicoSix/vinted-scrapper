@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel, HttpUrl
 from typing import Optional, List
 
@@ -106,7 +108,7 @@ class VintedItem(BaseModel):
 
 class GlobalSearchTrackingParams(BaseModel):
     search_correlation_id: str
-    global_search_session_id: str
+    global_search_session_id: str | None = None
     search_session_id: str
 
 
@@ -123,3 +125,24 @@ class VintedItemsSearchResponse(BaseModel):
     search_tracking_params: GlobalSearchTrackingParams
     pagination: Pagination
     code: int
+
+
+
+class MatchingItem(BaseModel):
+    title: str
+    amount: str
+    currency_code: str
+    publication_time: datetime
+    profile_url: str
+    item_url: str
+    highest_discount: float
+
+    def print_item(self):
+        print('Matching item: ')
+        print(f"- Title: {self.title}")
+        print(f"- Amount: {self.amount}")
+        print(f"- Currency Code: {self.currency_code}")
+        print(f"- Publication Time: {self.publication_time}")
+        print(f"- Profile URL: {self.profile_url}")
+        print(f"- Item URL: {self.item_url}")
+        print(f"- Highest Discount: {self.highest_discount}\n")
