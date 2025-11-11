@@ -2,6 +2,8 @@ import csv
 import json
 import os
 import random
+import signal
+import sys
 import time
 from enum import StrEnum
 from typing import Optional, Any
@@ -32,17 +34,25 @@ class PublicationTime(StrEnum):
     LAST_MONTH = 'last_month'
     ALL_TIME = 'all_time'
 
+def _signal_handler(sig, frame):
+    """Handle Ctrl+C signal gracefully."""
+    print("\n\nInterrupted by user (Ctrl+C).")
+    print("Pending results will be saved to CSV file if processing already began.")
+    sys.exit(0)
+
+
 def _random_sleep() -> None:
     """Sleep for a random duration between 1 and 3 seconds to mimic human browsing behavior."""
     sleep_duration = random.uniform(1, 3)
     time.sleep(sleep_duration)
 
 
-def _build_items_search_query(mode: SearchMode, search_value: str, min_price: float, max_price: float, brand_ids: list[int]) -> str:
+def _build_items_search_query(page_count: int, mode: SearchMode, search_value: str, min_price: float, max_price: float, brand_ids: list[int]) -> str:
     """Build the search query URL using a query builder."""
     query_params = {
         'search_text': search_value,
-        'order': 'newest_first' if mode == SearchMode.MOST_RECENT else 'relevance'
+        'order': 'newest_first' if mode == SearchMode.MOST_RECENT else 'relevance',
+        'page': str(page_count),
     }
 
     if min_price > 0:
@@ -81,12 +91,12 @@ def _get_user_input() -> Optional[dict]:
         inquirer.List('publication_time',
                       message='Item publication time',
                       choices=[
+                          ('All Time', PublicationTime.ALL_TIME),
                           ('Last hour', PublicationTime.LAST_HOUR),
                           ('Today', PublicationTime.TODAY),
                           ('Last 3 Days', PublicationTime.LAST_THREE_DAYS),
                           ('Last 7 Days', PublicationTime.LAST_SEVEN_DAYS),
                           ('Last Month', PublicationTime.LAST_MONTH),
-                          ('All Time', PublicationTime.ALL_TIME)
                       ]),
         inquirer.Checkbox('brands',
                          message='Choose brands to search',
@@ -107,13 +117,17 @@ def _get_user_input() -> Optional[dict]:
                       message='Maximum price (in €)',
                       validate=lambda _, x: x.isdigit() and float(x) >= 0,
                       default='9999'),
+        inquirer.Text('nb_items',
+                      message='Number of items to scan (0 = unlimited, Ctrl+C to exit)',
+                      validate=lambda _, x: x.isdigit() and int(x) >= 0,
+                      default='0'),
     ]
     return inquirer.prompt(questions)
 
 
-def _fetch_items(search_value: str, min_price: float, max_price: float, mode: SearchMode, headers: dict, brand_ids: list[int]) -> list[VintedItem]:
+def _fetch_items(search_value: str, page_count: int, min_price: float, max_price: float, mode: SearchMode, headers: dict, brand_ids: list[int]) -> list[VintedItem]:
     """Fetch items from Vinted API. Returns None on error."""
-    url = _build_items_search_query(search_value=search_value, mode=mode, min_price=min_price, max_price=max_price, brand_ids=brand_ids)
+    url = _build_items_search_query(page_count=page_count, search_value=search_value, mode=mode, min_price=min_price, max_price=max_price, brand_ids=brand_ids)
     response = requests.get(url, headers=headers)
 
     if not response.ok:
@@ -131,6 +145,9 @@ def _fetch_profile(owner_id: str, headers: dict) -> VintedProfile:
 
     return VintedProfileResponse.model_validate(response.json()).user
 
+
+def _should_stop_processing(nb_items: int, total_items_scanned: int) -> bool:
+    return nb_items != 0 and total_items_scanned >= nb_items
 
 def _get_highest_discount(profile: VintedProfile) -> float:
     """Get the highest discount percentage from profile. Returns 0 if no discounts available."""
@@ -226,6 +243,8 @@ def _process_item(item: VintedItem, min_favorites: int, min_discount: int, heade
 
 def main() -> None:
     """Main function to orchestrate the Vinted scraping process."""
+    signal.signal(signal.SIGINT, _signal_handler)
+
     headers = {
         'Accept': config["ACCEPT"],
         'Cookie': config["AUTH_COOKIE"],
@@ -246,6 +265,7 @@ def main() -> None:
     max_price = float(answers['max_price'])
     brand_ids = answers['brands']
     publication_time = answers['publication_time']
+    nb_items = int(answers['nb_items'])
 
     # Create CSV file with readable datetime
     results_dir = 'results'
@@ -254,20 +274,33 @@ def main() -> None:
     csv_path = os.path.join(results_dir, f'results-{timestamp}.csv')
     _setup_csv(csv_path)
 
-    items = _fetch_items(search_value=search_value, min_price=min_price, max_price=max_price, mode=mode, headers=headers, brand_ids=brand_ids)
+    page_count = 1
+    total_items_scanned = 0
 
-    if items is None:
-        return
+    while True:
+        items = _fetch_items(page_count=page_count, search_value=search_value, min_price=min_price, max_price=max_price, mode=mode, headers=headers, brand_ids=brand_ids)
 
-    matching_items: list[MatchingItem] = []
+        if items is None:
+            return
 
-    for i, item in enumerate(items):
-        print(f'\nLooking for item {i+1}/{len(items)}...')
-        maybe_matching_item = _process_item(item=item, min_favorites=min_favorites, min_discount=min_discount, headers=headers, publication_time=publication_time)
+        matching_items: list[MatchingItem] = []
 
-        if maybe_matching_item is not None:
-            matching_items.append(maybe_matching_item)
-            _insert_csv_line(csv_path, maybe_matching_item)
+        for item in items:
+            total_items_scanned += 1
+            print(f'\nProcessing item n°{total_items_scanned}...')
+            maybe_matching_item = _process_item(item=item, min_favorites=min_favorites, min_discount=min_discount, headers=headers, publication_time=publication_time)
+
+            if maybe_matching_item is not None:
+                matching_items.append(maybe_matching_item)
+                _insert_csv_line(csv_path, maybe_matching_item)
+
+            if _should_stop_processing(nb_items, total_items_scanned):
+                break
+
+        if _should_stop_processing(nb_items, total_items_scanned):
+            break
+
+        page_count += 1
 
     print('Job done. Matching items:\n')
     if len(matching_items) == 0:
@@ -277,6 +310,10 @@ def main() -> None:
             matching_item.print_item()
 
     print(f'\nResults saved to: {csv_path}')
+
+
+
+
 
 if __name__ == '__main__':
     main()

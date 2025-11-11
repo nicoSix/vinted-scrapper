@@ -71,7 +71,6 @@ class Badge(BaseModel):
 class ItemBox(BaseModel):
     first_line: str
     second_line: str
-    exposures: List[str]
     accessibility_label: str
     badge: Optional[Badge] = None
     item_id: int
