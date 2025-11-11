@@ -5,13 +5,14 @@ import random
 import signal
 import sys
 import time
+import inquirer
+import requests
+
+from dotenv import dotenv_values
 from enum import StrEnum
 from typing import Optional, Any
 from urllib.parse import urlencode
 from datetime import datetime, timedelta
-import inquirer
-import requests
-from dotenv import dotenv_values
 
 from models.items import VintedItemsSearchResponse, VintedItem, MatchingItem
 from models.profiles import VintedProfileResponse, VintedProfile
@@ -47,12 +48,12 @@ def _random_sleep() -> None:
     time.sleep(sleep_duration)
 
 
-def _build_items_search_query(page_count: int, mode: SearchMode, search_value: str, min_price: float, max_price: float, brand_ids: list[int]) -> str:
+def _build_items_search_query(mode: SearchMode, search_value: str, min_price: float, max_price: float, brand_ids: list[int]) -> str:
     """Build the search query URL using a query builder."""
     query_params = {
         'search_text': search_value,
         'order': 'newest_first' if mode == SearchMode.MOST_RECENT else 'relevance',
-        'page': str(page_count),
+        'per_page': 900,
     }
 
     if min_price > 0:
@@ -125,9 +126,9 @@ def _get_user_input() -> Optional[dict]:
     return inquirer.prompt(questions)
 
 
-def _fetch_items(search_value: str, page_count: int, min_price: float, max_price: float, mode: SearchMode, headers: dict, brand_ids: list[int]) -> list[VintedItem]:
+def _fetch_items(search_value: str, min_price: float, max_price: float, mode: SearchMode, headers: dict, brand_ids: list[int]) -> list[VintedItem]:
     """Fetch items from Vinted API. Returns None on error."""
-    url = _build_items_search_query(page_count=page_count, search_value=search_value, mode=mode, min_price=min_price, max_price=max_price, brand_ids=brand_ids)
+    url = _build_items_search_query(search_value=search_value, mode=mode, min_price=min_price, max_price=max_price, brand_ids=brand_ids)
     response = requests.get(url, headers=headers)
 
     if not response.ok:
@@ -274,33 +275,27 @@ def main() -> None:
     csv_path = os.path.join(results_dir, f'results-{timestamp}.csv')
     _setup_csv(csv_path)
 
-    page_count = 1
     total_items_scanned = 0
 
-    while True:
-        items = _fetch_items(page_count=page_count, search_value=search_value, min_price=min_price, max_price=max_price, mode=mode, headers=headers, brand_ids=brand_ids)
+    _random_sleep()
+    items = _fetch_items(search_value=search_value, min_price=min_price, max_price=max_price, mode=mode, headers=headers, brand_ids=brand_ids)
 
-        if items is None:
-            return
+    if items is None:
+        return
 
-        matching_items: list[MatchingItem] = []
+    matching_items: list[MatchingItem] = []
 
-        for item in items:
-            total_items_scanned += 1
-            print(f'\nProcessing item n°{total_items_scanned}...')
-            maybe_matching_item = _process_item(item=item, min_favorites=min_favorites, min_discount=min_discount, headers=headers, publication_time=publication_time)
+    for item in items:
+        total_items_scanned += 1
+        print(f'\nProcessing item n°{total_items_scanned}...')
+        maybe_matching_item = _process_item(item=item, min_favorites=min_favorites, min_discount=min_discount, headers=headers, publication_time=publication_time)
 
-            if maybe_matching_item is not None:
-                matching_items.append(maybe_matching_item)
-                _insert_csv_line(csv_path, maybe_matching_item)
-
-            if _should_stop_processing(nb_items, total_items_scanned):
-                break
+        if maybe_matching_item is not None:
+            matching_items.append(maybe_matching_item)
+            _insert_csv_line(csv_path, maybe_matching_item)
 
         if _should_stop_processing(nb_items, total_items_scanned):
             break
-
-        page_count += 1
 
     print('Job done. Matching items:\n')
     if len(matching_items) == 0:
